@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>SamanMobileInsurance.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>
