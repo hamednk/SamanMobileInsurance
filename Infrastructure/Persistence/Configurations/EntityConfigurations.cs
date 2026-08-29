@@ -13,6 +13,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.Username).HasMaxLength(64).IsRequired();
         builder.Property(x => x.PasswordHash).HasMaxLength(512).IsRequired();
         builder.HasIndex(x => x.Username).IsUnique().HasFilter("[IsDeleted] = 0");
+        builder.HasIndex(x => x.CreatedAt);
         builder.HasOne(x => x.Store).WithOne(s => s.User).HasForeignKey<Store>(s => s.UserId);
     }
 }
@@ -35,6 +36,7 @@ public class StoreConfiguration : IEntityTypeConfiguration<Store>
         builder.HasIndex(x => x.ProvinceId);
         builder.HasIndex(x => x.CityId);
         builder.HasIndex(x => x.CreatedAt);
+        builder.HasIndex(x => x.IsActive).HasFilter("[IsDeleted] = 0");
         builder.HasOne(x => x.Province).WithMany().HasForeignKey(x => x.ProvinceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.City).WithMany().HasForeignKey(x => x.CityId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -75,6 +77,7 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(x => x.PostalCode).HasMaxLength(10).IsRequired();
         builder.HasIndex(x => x.NationalCode);
         builder.HasIndex(x => x.Mobile);
+        builder.HasIndex(x => x.CreatedAt);
     }
 }
 
@@ -84,6 +87,8 @@ public class MobileBrandConfiguration : IEntityTypeConfiguration<MobileBrand>
     {
         builder.ToTable("MobileBrands");
         builder.Property(x => x.Name).HasMaxLength(80).IsRequired();
+        builder.HasIndex(x => new { x.IsActive, x.Name })
+            .HasFilter("[IsDeleted] = 0");
     }
 }
 
@@ -94,6 +99,8 @@ public class MobileModelConfiguration : IEntityTypeConfiguration<MobileModel>
         builder.ToTable("MobileModels");
         builder.Property(x => x.Name).HasMaxLength(80).IsRequired();
         builder.HasOne(x => x.Brand).WithMany(b => b.Models).HasForeignKey(x => x.BrandId);
+        builder.HasIndex(x => new { x.BrandId, x.IsActive, x.Name })
+            .HasFilter("[IsDeleted] = 0");
     }
 }
 
@@ -110,9 +117,15 @@ public class InsurancePolicyConfiguration : IEntityTypeConfiguration<InsurancePo
         builder.Property(x => x.PaymentTrackingCode).HasMaxLength(64);
         builder.Property(x => x.RowVersion).IsRowVersion();
         builder.HasIndex(x => x.PolicyNumber).IsUnique().HasFilter("[PolicyNumber] IS NOT NULL");
-        builder.HasIndex(x => x.Imei1);
-        builder.HasIndex(x => x.Imei2);
+        builder.HasIndex(x => new { x.Imei1, x.Status });
+        builder.HasIndex(x => new { x.Imei2, x.Status })
+            .HasFilter("[Imei2] IS NOT NULL");
         builder.HasIndex(x => x.StoreId);
+        builder.HasIndex(x => new { x.StoreId, x.CreatedAt })
+            .IsDescending(false, true);
+        builder.HasIndex(x => new { x.StoreId, x.Status, x.IssueDate });
+        builder.HasIndex(x => new { x.StoreId, x.Status, x.EndDate });
+        builder.HasIndex(x => new { x.Status, x.IssueDate });
         builder.HasIndex(x => x.CreatedAt);
         builder.HasIndex(x => x.IssueDate);
         builder.HasIndex(x => x.PaymentStatus);
@@ -135,6 +148,7 @@ public class SalesFestivalConfiguration : IEntityTypeConfiguration<SalesFestival
         builder.Property(x => x.Description).HasMaxLength(2000).IsRequired();
         builder.Property(x => x.RewardText).HasMaxLength(500).IsRequired();
         builder.HasIndex(x => x.IsActive);
+        builder.HasIndex(x => new { x.IsActive, x.StartsAt, x.EndsAt });
         builder.HasIndex(x => x.StartsAt);
         builder.HasIndex(x => x.EndsAt);
     }
@@ -163,6 +177,9 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.TrackingCode).HasMaxLength(64);
         builder.Property(x => x.Authority).HasMaxLength(128);
         builder.HasIndex(x => x.Authority);
+        builder.HasIndex(x => new { x.PolicyId, x.Status });
+        builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => x.CreatedAt);
         builder.HasOne(x => x.Policy).WithMany(p => p.Payments).HasForeignKey(x => x.PolicyId);
     }
 }
