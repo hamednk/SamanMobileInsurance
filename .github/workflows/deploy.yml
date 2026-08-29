@@ -1,0 +1,68 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script_stop: true
+          script: |
+            set -e
+
+            echo "===== BACKEND DEPLOY START ====="
+
+            cd /var/www/backend/SamanMobileInsurance
+
+            echo "===== GIT STATUS ====="
+            git status
+
+            echo "===== UPDATE SOURCE ====="
+            git fetch origin master
+            git reset --hard origin/master
+
+            echo "===== DOTNET PUBLISH ====="
+            rm -rf /var/www/backend/publish_new
+
+            dotnet restore
+
+            dotnet publish \
+              ./Api/SamanMobileInsurance.Api.csproj \
+              -c Release \
+              -o /var/www/backend/publish_new \
+              --no-restore
+
+            echo "===== STOP API ====="
+            sudo systemctl stop saman-insurance-api
+
+            echo "===== BACKUP CURRENT PUBLISH ====="
+            rm -rf /var/www/backend/publish_backup
+            mv /var/www/backend/publish /var/www/backend/publish_backup
+
+            echo "===== INSTALL NEW PUBLISH ====="
+            mv /var/www/backend/publish_new /var/www/backend/publish
+
+            echo "===== START API ====="
+            sudo systemctl start saman-insurance-api
+
+            echo "===== CHECK API ====="
+            sleep 3
+
+            sudo systemctl is-active --quiet saman-insurance-api
+
+            curl --fail --silent \
+              http://127.0.0.1:5000/api/v1/auth/captcha \
+              > /dev/null
+
+            echo "===== BACKEND DEPLOY SUCCESS ====="
