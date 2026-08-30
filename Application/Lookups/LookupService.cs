@@ -77,7 +77,7 @@ public class StoreDashboardService
         var month = await query.CountAsync(p => p.CreatedAt >= startMonth, cancellationToken);
         var sales = await query
             .Where(p => p.Status == PolicyStatus.Issued)
-            .SumAsync(p => (decimal?)p.PremiumRial, cancellationToken) ?? 0;
+            .SumAsync(p => (decimal?)p.CustomerChargedRial, cancellationToken) ?? 0;
         var awaiting = await query.CountAsync(p => p.Status == PolicyStatus.AwaitingPayment, cancellationToken);
         var issued = await query.CountAsync(p => p.Status == PolicyStatus.Issued, cancellationToken);
 

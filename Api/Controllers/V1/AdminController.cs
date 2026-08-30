@@ -139,6 +139,17 @@ public class AdminController : ApiControllerBase
         CancellationToken cancellationToken) =>
         Success(await insurance.GetAsync(id, cancellationToken));
 
+    [HttpGet("policies/{policyId:guid}/images/{imageId:guid}")]
+    public async Task<IActionResult> PolicyImage(
+        Guid policyId,
+        Guid imageId,
+        [FromServices] InsuranceImageService images,
+        CancellationToken cancellationToken)
+    {
+        var file = await images.OpenAsync(policyId, imageId, cancellationToken);
+        return File(file.Stream, file.ContentType, file.FileName);
+    }
+
     [HttpGet("customers")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<CustomerListItem>>>> Customers(
         [FromServices] AdminQueryService query,

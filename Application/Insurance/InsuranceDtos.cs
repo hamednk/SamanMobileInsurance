@@ -21,9 +21,14 @@ public record CreatePolicyRequest(
     decimal MobilePriceRial,
     string Imei1,
     string? Imei2,
-    DateTimeOffset? StartDate);
+    DateTimeOffset? StartDate,
+    decimal? CustomerChargedRial = null);
+
+public record SetCustomerChargedRequest(decimal CustomerChargedRial);
 
 public record PremiumRequest(InsuranceType InsuranceType, decimal MobilePriceRial);
+
+public record ImeiAvailabilityDto(bool Available, string? Message = null);
 
 public record PolicyDto(
     Guid Id,
@@ -33,6 +38,8 @@ public record PolicyDto(
     PaymentStatus PaymentStatus,
     decimal MobilePriceRial,
     decimal PremiumRial,
+    decimal CustomerChargedRial,
+    decimal StoreProfitRial,
     string Imei1,
     string? Imei2,
     DateTimeOffset StartDate,
@@ -67,6 +74,8 @@ public record PolicyListItemDto(
     PolicyStatus Status,
     PaymentStatus PaymentStatus,
     decimal PremiumRial,
+    decimal CustomerChargedRial,
+    decimal StoreProfitRial,
     string CustomerName,
     string BrandName,
     string ModelName,
@@ -83,6 +92,8 @@ public record RenewalListItemDto(
     PolicyStatus Status,
     PaymentStatus PaymentStatus,
     decimal PremiumRial,
+    decimal CustomerChargedRial,
+    decimal StoreProfitRial,
     string CustomerName,
     string BrandName,
     string ModelName,
@@ -118,6 +129,10 @@ public class CreatePolicyRequestValidator : AbstractValidator<CreatePolicyReques
         RuleFor(x => x.BrandId).NotEmpty();
         RuleFor(x => x.ModelId).NotEmpty();
         RuleFor(x => x.MobilePriceRial).GreaterThan(0).WithMessage("قیمت موبایل باید بزرگ‌تر از صفر باشد.");
+        RuleFor(x => x.CustomerChargedRial)
+            .GreaterThan(0)
+            .When(x => x.CustomerChargedRial is not null)
+            .WithMessage("مبلغ دریافتی از مشتری باید بزرگ‌تر از صفر باشد.");
         RuleFor(x => x.Imei1)
             .Must(ImeiValidator.IsValid).WithMessage("IMEI 1 معتبر نیست.");
         RuleFor(x => x.Imei2)
@@ -140,5 +155,13 @@ public class PremiumRequestValidator : AbstractValidator<PremiumRequest>
     {
         RuleFor(x => x.MobilePriceRial).GreaterThan(0);
         RuleFor(x => x.InsuranceType).IsInEnum();
+    }
+}
+
+public class SetCustomerChargedRequestValidator : AbstractValidator<SetCustomerChargedRequest>
+{
+    public SetCustomerChargedRequestValidator()
+    {
+        RuleFor(x => x.CustomerChargedRial).GreaterThan(0).WithMessage("مبلغ دریافتی از مشتری باید بزرگ‌تر از صفر باشد.");
     }
 }

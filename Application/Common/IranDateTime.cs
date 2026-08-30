@@ -27,9 +27,15 @@ public static class IranDateTime
 
     public static string ToJalaliDate(DateOnly date)
     {
+        var (year, month, day) = ToJalaliParts(date);
+        return $"{year:0000}/{month:00}/{day:00}";
+    }
+
+    public static (int Year, int Month, int Day) ToJalaliParts(DateOnly date)
+    {
         var dt = date.ToDateTime(TimeOnly.MinValue);
         var pc = new PersianCalendar();
-        return $"{pc.GetYear(dt):0000}/{pc.GetMonth(dt):00}/{pc.GetDayOfMonth(dt):00}";
+        return (pc.GetYear(dt), pc.GetMonth(dt), pc.GetDayOfMonth(dt));
     }
 
     private static TimeZoneInfo ResolveTehran()

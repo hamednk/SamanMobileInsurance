@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SamanMobileInsurance.Application.Abstractions;
 using SamanMobileInsurance.Application.Payments;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Processing;
 
 namespace SamanMobileInsurance.Infrastructure.Storage;
@@ -69,19 +70,21 @@ public class ImageProcessor : IImageProcessor
 {
     public async Task<ProcessedImage> ProcessAsync(Stream input, string contentType, CancellationToken cancellationToken = default)
     {
-        using var image = await SixLabors.ImageSharp.Image.LoadAsync(input, cancellationToken);
-        const int max = 1600;
+        using var image = await Image.LoadAsync(input, cancellationToken);
+        image.Mutate(x => x.AutoOrient());
+
+        const int max = 1280;
         if (image.Width > max || image.Height > max)
         {
-            image.Mutate(x => x.Resize(new SixLabors.ImageSharp.Processing.ResizeOptions
+            image.Mutate(x => x.Resize(new ResizeOptions
             {
-                Mode = SixLabors.ImageSharp.Processing.ResizeMode.Max,
-                Size = new SixLabors.ImageSharp.Size(max, max)
+                Mode = ResizeMode.Max,
+                Size = new Size(max, max)
             }));
         }
 
         var output = new MemoryStream();
-        await image.SaveAsJpegAsync(output, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 80 }, cancellationToken);
+        await image.SaveAsJpegAsync(output, new JpegEncoder { Quality = 72 }, cancellationToken);
         output.Position = 0;
         return new ProcessedImage(output, "image/jpeg", ".jpg");
     }
@@ -104,12 +107,7 @@ public class MockPaymentGateway : IPaymentGateway
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, decimal> Authorities = new();
 
-    private readonly string _frontendBaseUrl;
-
-    public MockPaymentGateway(PaymentOptions options)
-    {
-        _frontendBaseUrl = options.FrontendBaseUrl.TrimEnd('/');
-    }
+    public MockPaymentGateway(PaymentOptions options) => ArgumentNullException.ThrowIfNull(options);
 
     public Domain.Enums.PaymentGatewayType GatewayType => Domain.Enums.PaymentGatewayType.Mock;
 
@@ -117,7 +115,8 @@ public class MockPaymentGateway : IPaymentGateway
     {
         var authority = Guid.NewGuid().ToString("N");
         Authorities[authority] = amountRial;
-        var redirect = $"{_frontendBaseUrl}/insurance/mock-gateway?authority={authority}";
+        // Relative URL so the store stays on the same origin (not API localhost).
+        var redirect = $"/insurance/mock-gateway?authority={authority}";
         return Task.FromResult(new PaymentInitResult(authority, redirect));
     }
 

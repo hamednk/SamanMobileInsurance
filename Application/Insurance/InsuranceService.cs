@@ -53,6 +53,7 @@ public class InsuranceService
             ModelId = request.ModelId,
             MobilePriceRial = quote.MobilePriceRial,
             PremiumRial = quote.PremiumRial,
+            CustomerChargedRial = StoreMarkup.ResolveCustomerCharged(quote.PremiumRial, request.CustomerChargedRial),
             Imei1 = request.Imei1,
             Imei2 = string.IsNullOrWhiteSpace(request.Imei2) ? null : request.Imei2,
             StartDate = startDate,
@@ -81,7 +82,16 @@ public class InsuranceService
         return Map(policy);
     }
 
-    public async Task<PagedResult<PolicyListItemDto>> ListMineAsync(int page, int pageSize, string? search, CancellationToken cancellationToken)
+    public async Task<PagedResult<PolicyListItemDto>> ListMineAsync(
+        int page,
+        int pageSize,
+        string? search,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        InsuranceType? insuranceType,
+        PolicyStatus? status,
+        PaymentStatus? paymentStatus,
+        CancellationToken cancellationToken)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -92,16 +102,7 @@ public class InsuranceService
             .Include(p => p.Model)
             .Where(p => p.StoreId == _current.StoreId);
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim();
-            query = query.Where(p =>
-                (p.PolicyNumber != null && p.PolicyNumber.Contains(term)) ||
-                p.Customer.FirstName.Contains(term) ||
-                p.Customer.LastName.Contains(term) ||
-                p.Customer.NationalCode.Contains(term) ||
-                p.Imei1.Contains(term));
-        }
+        query = ApplyStoreListFilters(query, search, fromDate, toDate, insuranceType, status, paymentStatus);
 
         var total = await query.CountAsync(cancellationToken);
         var today = IranDateTime.TehranToday;
@@ -117,6 +118,7 @@ public class InsuranceService
                 p.Status,
                 p.PaymentStatus,
                 p.PremiumRial,
+                p.CustomerChargedRial,
                 CustomerName = p.Customer.FirstName + " " + p.Customer.LastName,
                 BrandName = p.Brand.Name,
                 ModelName = p.Model.Name,
@@ -135,6 +137,8 @@ public class InsuranceService
             p.Status,
             p.PaymentStatus,
             p.PremiumRial,
+            p.CustomerChargedRial,
+            StoreMarkup.Profit(p.CustomerChargedRial, p.PremiumRial),
             p.CustomerName,
             p.BrandName,
             p.ModelName,
@@ -200,6 +204,7 @@ public class InsuranceService
                 p.Status,
                 p.PaymentStatus,
                 p.PremiumRial,
+                p.CustomerChargedRial,
                 CustomerName = p.Customer.FirstName + " " + p.Customer.LastName,
                 BrandName = p.Brand.Name,
                 ModelName = p.Model.Name,
@@ -218,6 +223,8 @@ public class InsuranceService
             p.Status,
             p.PaymentStatus,
             p.PremiumRial,
+            p.CustomerChargedRial,
+            StoreMarkup.Profit(p.CustomerChargedRial, p.PremiumRial),
             p.CustomerName,
             p.BrandName,
             p.ModelName,
@@ -304,6 +311,7 @@ public class InsuranceService
             ModelId = source.ModelId,
             MobilePriceRial = quote.MobilePriceRial,
             PremiumRial = quote.PremiumRial,
+            CustomerChargedRial = quote.PremiumRial,
             Imei1 = source.Imei1,
             Imei2 = source.Imei2,
             StartDate = startDate,
@@ -349,7 +357,30 @@ public class InsuranceService
         return await GetAsync(id, cancellationToken);
     }
 
+    public async Task<PolicyDto> SetCustomerChargedAsync(Guid id, decimal customerChargedRial, CancellationToken cancellationToken)
+    {
+        var policy = await LoadOwnedAsync(id, cancellationToken);
+        if (policy.Status is PolicyStatus.Issued or PolicyStatus.Cancelled or PolicyStatus.Expired)
+        {
+            throw new ValidationAppException("پس از صدور، لغو یا انقضای بیمه‌نامه امکان تغییر مبلغ دریافتی وجود ندارد.");
+        }
+
+        policy.CustomerChargedRial = StoreMarkup.ResolveCustomerCharged(policy.PremiumRial, customerChargedRial);
+        policy.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+        await _audit.LogAsync("policy-customer-charged", nameof(InsurancePolicy), policy.Id.ToString(), cancellationToken);
+        return await GetAsync(id, cancellationToken);
+    }
+
     public async Task EnsureImeiAvailableAsync(string imei1, string? imei2, Guid? excludePolicyId, CancellationToken cancellationToken)
+    {
+        if (!await IsImeiAvailableAsync(imei1, imei2, excludePolicyId, cancellationToken))
+        {
+            throw new ConflictException("این IMEI دارای بیمه‌نامه فعال است و امکان ثبت بیمه جدید وجود ندارد.");
+        }
+    }
+
+    public async Task<bool> IsImeiAvailableAsync(string imei1, string? imei2, Guid? excludePolicyId, CancellationToken cancellationToken)
     {
         var query = _db.InsurancePolicies.AsNoTracking()
             .Where(p => ActiveImeiStatuses.Contains(p.Status));
@@ -359,15 +390,10 @@ public class InsuranceService
             query = query.Where(p => p.Id != excludePolicyId);
         }
 
-        var exists = await query.AnyAsync(p =>
+        return !await query.AnyAsync(p =>
             p.Imei1 == imei1 ||
             p.Imei2 == imei1 ||
             (imei2 != null && (p.Imei1 == imei2 || p.Imei2 == imei2)), cancellationToken);
-
-        if (exists)
-        {
-            throw new ConflictException("این IMEI دارای بیمه‌نامه فعال است و امکان ثبت بیمه جدید وجود ندارد.");
-        }
     }
 
     public async Task<Customer?> FindCustomerAsync(string nationalCode, string mobile, CancellationToken cancellationToken)
@@ -426,6 +452,45 @@ public class InsuranceService
         }
 
         return store;
+    }
+
+    private static IQueryable<InsurancePolicy> ApplyStoreListFilters(
+        IQueryable<InsurancePolicy> query,
+        string? search,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        InsuranceType? insuranceType,
+        PolicyStatus? status,
+        PaymentStatus? paymentStatus)
+    {
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(p =>
+                (p.PolicyNumber != null && p.PolicyNumber.Contains(term)) ||
+                p.Customer.FirstName.Contains(term) ||
+                p.Customer.LastName.Contains(term) ||
+                p.Customer.NationalCode.Contains(term) ||
+                p.Imei1.Contains(term));
+        }
+
+        if (fromDate is not null)
+        {
+            var start = new DateTimeOffset(fromDate.Value.ToDateTime(TimeOnly.MinValue), IranDateTime.TehranNow.Offset).ToUniversalTime();
+            query = query.Where(p => p.CreatedAt >= start);
+        }
+
+        if (toDate is not null)
+        {
+            var endExclusive = new DateTimeOffset(toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue), IranDateTime.TehranNow.Offset).ToUniversalTime();
+            query = query.Where(p => p.CreatedAt < endExclusive);
+        }
+
+        if (insuranceType is not null) query = query.Where(p => p.InsuranceType == insuranceType);
+        if (status is not null) query = query.Where(p => p.Status == status);
+        if (paymentStatus is not null) query = query.Where(p => p.PaymentStatus == paymentStatus);
+
+        return query;
     }
 
     private async Task EnsureBrandModelAsync(Guid brandId, Guid modelId, CancellationToken cancellationToken)
@@ -505,6 +570,8 @@ public class InsuranceService
         policy.PaymentStatus,
         policy.MobilePriceRial,
         policy.PremiumRial,
+        policy.CustomerChargedRial,
+        StoreMarkup.Profit(policy.CustomerChargedRial, policy.PremiumRial),
         policy.Imei1,
         policy.Imei2,
         policy.StartDate,

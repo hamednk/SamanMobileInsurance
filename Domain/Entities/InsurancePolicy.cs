@@ -12,7 +12,10 @@ public class InsurancePolicy : BaseEntity
     public Guid BrandId { get; set; }
     public Guid ModelId { get; set; }
     public decimal MobilePriceRial { get; set; }
+    /// <summary>حق بیمه محاسبه‌شده سامانه (سهم شرکت)</summary>
     public decimal PremiumRial { get; set; }
+    /// <summary>مبلغی که فروشگاه از مشتری گرفته. سود فروشگاه = این مبلغ − حق بیمه</summary>
+    public decimal CustomerChargedRial { get; set; }
     public string Imei1 { get; set; } = string.Empty;
     public string? Imei2 { get; set; }
     public DateTimeOffset StartDate { get; set; }

@@ -2,11 +2,12 @@ using Asp.Versioning;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SamanMobileInsurance.Application.Abstractions;
+using SamanMobileInsurance.Application.Common;
 using SamanMobileInsurance.Application.Festivals;
 using SamanMobileInsurance.Application.Insurance;
 using SamanMobileInsurance.Application.Lookups;
 using SamanMobileInsurance.Application.Stores;
-using SamanMobileInsurance.Application.Common;
 using SamanMobileInsurance.Domain.Enums;
 
 namespace SamanMobileInsurance.Api.Controllers.V1;
@@ -36,10 +37,35 @@ public class InsuranceController : ApiControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
+        [FromQuery] DateOnly? fromDate = null,
+        [FromQuery] DateOnly? toDate = null,
+        [FromQuery] InsuranceType? insuranceType = null,
+        [FromQuery] PolicyStatus? status = null,
+        [FromQuery] PaymentStatus? paymentStatus = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _insurance.ListMineAsync(page, pageSize, search, cancellationToken);
+        var result = await _insurance.ListMineAsync(
+            page, pageSize, search, fromDate, toDate, insuranceType, status, paymentStatus, cancellationToken);
         return Success(result.Items, pagination: result.Pagination);
+    }
+
+    [HttpGet("mine/export")]
+    public async Task<IActionResult> ExportMine(
+        [FromServices] IExcelReportService excel,
+        [FromServices] ICurrentUser current,
+        [FromQuery] DateOnly? fromDate,
+        [FromQuery] DateOnly? toDate,
+        [FromQuery] InsuranceType? insuranceType,
+        [FromQuery] PolicyStatus? status,
+        [FromQuery] PaymentStatus? paymentStatus,
+        [FromQuery] string? search,
+        CancellationToken cancellationToken = default)
+    {
+        var storeId = current.StoreId ?? throw new ForbiddenAppException();
+        var bytes = await excel.ExportInsuranceAsync(new InsuranceReportFilter(
+            fromDate, toDate, null, null, storeId, insuranceType, status, paymentStatus, search, 1, 20, null, null),
+            cancellationToken);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "store-policies.xlsx");
     }
 
     [HttpGet("renewals")]
@@ -70,6 +96,29 @@ public class InsuranceController : ApiControllerBase
     {
         await validator.EnsureValidAsync(request, cancellationToken);
         return Success(await _premium.QuoteAsync(request.InsuranceType, request.MobilePriceRial, cancellationToken));
+    }
+
+    [HttpGet("imei/available")]
+    public async Task<ActionResult<ApiResponse<ImeiAvailabilityDto>>> CheckImeiAvailability(
+        [FromQuery] string imei1,
+        [FromQuery] string? imei2,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(imei1))
+        {
+            throw new ValidationAppException("سریال ۱ الزامی است.");
+        }
+
+        var normalizedImei2 = string.IsNullOrWhiteSpace(imei2) ? null : imei2.Trim();
+        if (normalizedImei2 is not null && imei1 == normalizedImei2)
+        {
+            return Success(new ImeiAvailabilityDto(false, "سریال ۱ و سریال ۲ نباید یکسان باشند."));
+        }
+
+        var available = await _insurance.IsImeiAvailableAsync(imei1.Trim(), normalizedImei2, null, cancellationToken);
+        return Success(available
+            ? new ImeiAvailabilityDto(true)
+            : new ImeiAvailabilityDto(false, "این IMEI دارای بیمه‌نامه فعال است و امکان ثبت بیمه جدید وجود ندارد."));
     }
 
     [HttpGet("customers/lookup")]
@@ -112,6 +161,17 @@ public class InsuranceController : ApiControllerBase
     [HttpPost("{id:guid}/renew")]
     public async Task<ActionResult<ApiResponse<PolicyDto>>> Renew(Guid id, CancellationToken cancellationToken) =>
         Success(await _insurance.RenewAsync(id, cancellationToken), "تمدید بیمه‌نامه ایجاد شد. ادامه پرداخت را انجام دهید.");
+
+    [HttpPut("{id:guid}/customer-charged")]
+    public async Task<ActionResult<ApiResponse<PolicyDto>>> SetCustomerCharged(
+        Guid id,
+        [FromBody] SetCustomerChargedRequest request,
+        [FromServices] IValidator<SetCustomerChargedRequest> validator,
+        CancellationToken cancellationToken)
+    {
+        await validator.EnsureValidAsync(request, cancellationToken);
+        return Success(await _insurance.SetCustomerChargedAsync(id, request.CustomerChargedRial, cancellationToken), "مبلغ دریافتی از مشتری ذخیره شد.");
+    }
 
     [HttpPost("{id:guid}/cancel")]
     public async Task<ActionResult<ApiResponse<PolicyDto>>> Cancel(Guid id, CancellationToken cancellationToken) =>

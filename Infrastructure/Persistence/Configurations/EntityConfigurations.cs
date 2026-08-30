@@ -114,6 +114,7 @@ public class InsurancePolicyConfiguration : IEntityTypeConfiguration<InsurancePo
         builder.Property(x => x.Imei2).HasMaxLength(15);
         builder.Property(x => x.MobilePriceRial).HasPrecision(18, 0);
         builder.Property(x => x.PremiumRial).HasPrecision(18, 0);
+        builder.Property(x => x.CustomerChargedRial).HasPrecision(18, 0);
         builder.Property(x => x.PaymentTrackingCode).HasMaxLength(64);
         builder.Property(x => x.RowVersion).IsRowVersion();
         builder.HasIndex(x => x.PolicyNumber).IsUnique().HasFilter("[PolicyNumber] IS NOT NULL");

@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using SamanMobileInsurance.Application.Abstractions;
 using SamanMobileInsurance.Application.Common;
+using SamanMobileInsurance.Application.Insurance;
 using SamanMobileInsurance.Domain.Enums;
 
 namespace SamanMobileInsurance.Application.Reports;
 
 public record InsuranceReportRow(
+    Guid Id,
     string? PolicyNumber,
     string StoreName,
     string ManagerName,
@@ -28,7 +30,10 @@ public record InsuranceReportRow(
     string? Imei2,
     DateTimeOffset? IssueDate,
     DateTimeOffset StartDate,
+    DateTimeOffset? EndDate,
     decimal PremiumRial,
+    decimal CustomerChargedRial,
+    decimal StoreProfitRial,
     PolicyStatus Status,
     PaymentStatus PaymentStatus,
     string? TransactionId,
@@ -131,6 +136,7 @@ public class ReportService
     {
         var paid = p.Payments.OrderByDescending(x => x.PaidAt).FirstOrDefault(x => x.Status == PaymentStatus.Paid);
         return new InsuranceReportRow(
+            p.Id,
             p.PolicyNumber,
             p.Store.StoreName,
             $"{p.Store.ManagerFirstName} {p.Store.ManagerLastName}",
@@ -153,7 +159,10 @@ public class ReportService
             p.Imei2,
             p.IssueDate,
             p.StartDate,
+            p.EndDate,
             p.PremiumRial,
+            p.CustomerChargedRial,
+            StoreMarkup.Profit(p.CustomerChargedRial, p.PremiumRial),
             p.Status,
             p.PaymentStatus,
             paid?.TransactionId,

@@ -21,9 +21,12 @@ public class ExcelReportService : IExcelReportService
         var headers = new[]
         {
             "شماره بیمه‌نامه", "نام فروشگاه", "نام مدیر", "موبایل فروشگاه", "استان", "شهر", "آدرس فروشگاه",
-            "نام بیمه‌گذار", "نام خانوادگی", "کد ملی", "تاریخ تولد", "موبایل مشتری", "آدرس مشتری", "کد پستی",
+            "نام بیمه‌گذار", "نام خانوادگی", "کد ملی", "سال تولد", "ماه تولد", "روز تولد",
+            "موبایل مشتری", "آدرس مشتری", "کد پستی",
             "نوع موبایل", "برند", "مدل", "قیمت (ریال)", "IMEI1", "IMEI2",
-            "تاریخ صدور", "تاریخ شروع", "حق بیمه (ریال)", "وضعیت", "وضعیت پرداخت", "شماره تراکنش", "کد پیگیری"
+            "تاریخ صدور", "تاریخ شروع", "تاریخ پایان بیمه",
+            "حق بیمه / سهم شرکت (ریال)", "مبلغ دریافتی از مشتری (ریال)", "سود فروشگاه (ریال)",
+            "وضعیت", "وضعیت پرداخت", "شماره تراکنش", "کد پیگیری"
         };
 
         for (var i = 0; i < headers.Length; i++)
@@ -49,23 +52,29 @@ public class ExcelReportService : IExcelReportService
             ws.Cell(r, 8).Value = row.CustomerFirstName;
             ws.Cell(r, 9).Value = row.CustomerLastName;
             ws.Cell(r, 10).Value = row.NationalCode;
-            ws.Cell(r, 11).Value = IranDateTime.ToJalaliDate(row.BirthDate);
-            ws.Cell(r, 12).Value = row.CustomerMobile;
-            ws.Cell(r, 13).Value = row.CustomerAddress;
-            ws.Cell(r, 14).Value = row.PostalCode;
-            ws.Cell(r, 15).Value = PersianLabels.ForInsuranceType(row.InsuranceType);
-            ws.Cell(r, 16).Value = row.Brand;
-            ws.Cell(r, 17).Value = row.Model;
-            ws.Cell(r, 18).Value = row.MobilePriceRial;
-            ws.Cell(r, 19).Value = row.Imei1;
-            ws.Cell(r, 20).Value = row.Imei2;
-            ws.Cell(r, 21).Value = row.IssueDate is null ? "" : IranDateTime.ToJalaliDate(row.IssueDate.Value);
-            ws.Cell(r, 22).Value = IranDateTime.ToJalaliDate(row.StartDate);
-            ws.Cell(r, 23).Value = row.PremiumRial;
-            ws.Cell(r, 24).Value = PersianLabels.ForPolicyStatus(row.Status);
-            ws.Cell(r, 25).Value = PersianLabels.ForPaymentStatus(row.PaymentStatus);
-            ws.Cell(r, 26).Value = row.TransactionId;
-            ws.Cell(r, 27).Value = row.TrackingCode;
+            var birth = IranDateTime.ToJalaliParts(row.BirthDate);
+            ws.Cell(r, 11).Value = birth.Year;
+            ws.Cell(r, 12).Value = birth.Month;
+            ws.Cell(r, 13).Value = birth.Day;
+            ws.Cell(r, 14).Value = row.CustomerMobile;
+            ws.Cell(r, 15).Value = row.CustomerAddress;
+            ws.Cell(r, 16).Value = row.PostalCode;
+            ws.Cell(r, 17).Value = PersianLabels.ForInsuranceType(row.InsuranceType);
+            ws.Cell(r, 18).Value = row.Brand;
+            ws.Cell(r, 19).Value = row.Model;
+            ws.Cell(r, 20).Value = row.MobilePriceRial;
+            ws.Cell(r, 21).Value = row.Imei1;
+            ws.Cell(r, 22).Value = row.Imei2;
+            ws.Cell(r, 23).Value = row.IssueDate is null ? "" : IranDateTime.ToJalaliDate(row.IssueDate.Value);
+            ws.Cell(r, 24).Value = IranDateTime.ToJalaliDate(row.StartDate);
+            ws.Cell(r, 25).Value = EndDateJalali(row);
+            ws.Cell(r, 26).Value = row.PremiumRial;
+            ws.Cell(r, 27).Value = row.CustomerChargedRial;
+            ws.Cell(r, 28).Value = row.StoreProfitRial;
+            ws.Cell(r, 29).Value = PersianLabels.ForPolicyStatus(row.Status);
+            ws.Cell(r, 30).Value = PersianLabels.ForPaymentStatus(row.PaymentStatus);
+            ws.Cell(r, 31).Value = row.TransactionId;
+            ws.Cell(r, 32).Value = row.TrackingCode;
             r++;
         }
 
@@ -74,5 +83,11 @@ public class ExcelReportService : IExcelReportService
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
+    }
+
+    private static string EndDateJalali(InsuranceReportRow row)
+    {
+        // تاریخ پایان بیمه = یک سال بعد از تاریخ شروع
+        return IranDateTime.ToJalaliDate(row.StartDate.AddYears(1));
     }
 }

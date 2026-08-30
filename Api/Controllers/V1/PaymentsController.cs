@@ -21,6 +21,16 @@ public class PaymentsController : ApiControllerBase
         Success(await _payments.InitiateAsync(policyId, cancellationToken), "در حال انتقال به درگاه...");
 
     [AllowAnonymous]
+    [HttpPost("complete")]
+    public async Task<ActionResult<ApiResponse<PaymentCallbackResult>>> Complete(
+        [FromBody] PaymentCallbackRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _payments.HandleCallbackAsync(request.Authority, request.Status, cancellationToken);
+        return Success(result);
+    }
+
+    [AllowAnonymous]
     [HttpGet("callback")]
     [HttpPost("callback")]
     public async Task<IActionResult> Callback(
@@ -28,8 +38,12 @@ public class PaymentsController : ApiControllerBase
         [FromQuery] string? status,
         CancellationToken cancellationToken)
     {
-        var url = await _payments.HandleCallbackAsync(authority, status, cancellationToken);
-        return Redirect(url);
+        var result = await _payments.HandleCallbackAsync(authority, status, cancellationToken);
+        var origin = Request.Headers.Origin.FirstOrDefault()
+            ?? (Uri.TryCreate(Request.Headers.Referer.FirstOrDefault(), UriKind.Absolute, out var referer)
+                ? $"{referer.Scheme}://{referer.Authority}"
+                : null);
+        return Redirect(_payments.ToFrontendRedirect(result.NextPath, origin));
     }
 }
 

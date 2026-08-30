@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SamanMobileInsurance.Application.Insurance;
-using SamanMobileInsurance.Application.Stores;
 using SamanMobileInsurance.Domain.Entities;
 using SamanMobileInsurance.Domain.Enums;
 using SamanMobileInsurance.Infrastructure.Auth;
@@ -72,11 +71,13 @@ public class DbSeeder
             "سقف قیمت قابل بیمه به ریال (پیش‌فرض معادل ۱ میلیارد تومان)",
             cancellationToken);
 
-        await EnsureSettingAsync(
-            StorePerformanceService.CommissionSettingKey,
-            "15",
-            "درصد سهم فروشگاه از حق بیمه دریافتی مشتری. سود فروشگاه = دریافتی از مشتری − واریز به شرکت (۱۰۰٪ منهای این درصد).",
-            cancellationToken);
+        var obsoleteCommission = await _db.AppSettings.FirstOrDefaultAsync(
+            s => s.Key == "StoreCommissionPercent", cancellationToken);
+        if (obsoleteCommission is not null)
+        {
+            _db.AppSettings.Remove(obsoleteCommission);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private async Task EnsureSettingAsync(string key, string value, string description, CancellationToken cancellationToken)

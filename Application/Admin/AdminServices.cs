@@ -83,6 +83,10 @@ public class AdminCatalogService
         }
 
         var name = request.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ValidationAppException("نام مدل الزامی است.");
+        }
         if (await _db.MobileModels.AnyAsync(
                 m => !m.IsDeleted && m.BrandId == request.BrandId && m.Name.ToLower() == name.ToLower(),
                 cancellationToken))

@@ -12,6 +12,7 @@ public static class PersianLabels
         PolicyStatus.Paid => "پرداخت‌شده",
         PolicyStatus.Issued => "صادر شده",
         PolicyStatus.Cancelled => "لغو شده",
+        PolicyStatus.Expired => "منقضی‌شده",
         _ => status.ToString()
     };
 

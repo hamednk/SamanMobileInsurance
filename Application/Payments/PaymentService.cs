@@ -11,6 +11,8 @@ public record PaymentInitDto(Guid PaymentId, decimal AmountRial, string Redirect
 
 public record PaymentCallbackRequest(string Authority, string? Status);
 
+public record PaymentCallbackResult(bool Paid, Guid PolicyId, string NextPath);
+
 public class PaymentService
 {
     private readonly IApplicationDbContext _db;
@@ -102,15 +104,27 @@ public class PaymentService
         return new PaymentInitDto(payment.Id, payment.AmountRial, init.RedirectUrl, init.Authority);
     }
 
-    public async Task<string> HandleCallbackAsync(string authority, string? status, CancellationToken cancellationToken)
+    public string ToFrontendRedirect(string nextPath, string? requestOrigin = null)
+    {
+        var path = nextPath.StartsWith('/') ? nextPath : $"/{nextPath}";
+        if (Uri.TryCreate(requestOrigin, UriKind.Absolute, out var origin) &&
+            origin.Scheme is "http" or "https")
+        {
+            return $"{origin.Scheme}://{origin.Authority}{path}";
+        }
+
+        return $"{_frontendBaseUrl}{path}";
+    }
+
+    public async Task<PaymentCallbackResult> HandleCallbackAsync(string authority, string? status, CancellationToken cancellationToken)
     {
         var payment = await _db.Payments
             .Include(p => p.Policy)
             .FirstOrDefaultAsync(p => p.Authority == authority, cancellationToken)
             ?? throw new NotFoundException("پرداخت یافت نشد.");
 
-        var successUrl = $"{_frontendBaseUrl}/insurance/{payment.PolicyId}/success";
-        var failUrl = $"{_frontendBaseUrl}/insurance/{payment.PolicyId}/payment?failed=1";
+        var successPath = $"/insurance/{payment.PolicyId}/success";
+        var failPath = $"/insurance/{payment.PolicyId}/payment?failed=1";
 
         if (!string.Equals(status, "OK", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(status, "success", StringComparison.OrdinalIgnoreCase))
@@ -118,17 +132,17 @@ public class PaymentService
             payment.Status = PaymentStatus.Failed;
             payment.UpdatedAt = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
-            return failUrl;
+            return new PaymentCallbackResult(false, payment.PolicyId, failPath);
         }
 
         try
         {
             await VerifyAndIssueAsync(payment, cancellationToken);
-            return successUrl;
+            return new PaymentCallbackResult(true, payment.PolicyId, successPath);
         }
         catch
         {
-            return failUrl;
+            return new PaymentCallbackResult(false, payment.PolicyId, failPath);
         }
     }
 
