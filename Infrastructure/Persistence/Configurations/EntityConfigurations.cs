@@ -99,6 +99,7 @@ public class MobileModelConfiguration : IEntityTypeConfiguration<MobileModel>
         builder.ToTable("MobileModels");
         builder.Property(x => x.Name).HasMaxLength(80).IsRequired();
         builder.HasOne(x => x.Brand).WithMany(b => b.Models).HasForeignKey(x => x.BrandId);
+        builder.HasIndex(x => x.CreatedByUserId);
         builder.HasIndex(x => new { x.BrandId, x.IsActive, x.Name })
             .HasFilter("[IsDeleted] = 0");
     }

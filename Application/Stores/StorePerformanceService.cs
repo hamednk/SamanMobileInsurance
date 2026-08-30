@@ -24,7 +24,6 @@ public record StorePerformanceReportDto(
     /// <summary>سهم شرکت (جمع حق بیمه محاسبه‌شده)</summary>
     decimal CompanyRemittanceRial,
     decimal TotalMobilePriceRial,
-    decimal AveragePremiumRial,
     /// <summary>سود فروشگاه = دریافتی از مشتری − سهم شرکت</summary>
     decimal StoreProfitRial,
     IReadOnlyList<StoreDailyPoint> Daily,
@@ -63,29 +62,30 @@ public class StorePerformanceService
             .Where(p => p.StoreId == storeId && p.CreatedAt >= start && p.CreatedAt < endExclusive)
             .ToListAsync(cancellationToken);
 
-        var issuedInPeriod = await _db.InsurancePolicies.AsNoTracking()
+        var billedInPeriod = await _db.InsurancePolicies.AsNoTracking()
             .Include(p => p.Brand)
             .Where(p => p.StoreId == storeId &&
-                        p.Status == PolicyStatus.Issued &&
-                        p.IssueDate != null &&
-                        p.IssueDate >= start &&
-                        p.IssueDate < endExclusive)
+                        (p.Status == PolicyStatus.Issued || p.Status == PolicyStatus.Paid) &&
+                        (
+                            (p.IssueDate != null && p.IssueDate >= start && p.IssueDate < endExclusive) ||
+                            (p.Status == PolicyStatus.Paid && p.CreatedAt >= start && p.CreatedAt < endExclusive)
+                        ))
             .ToListAsync(cancellationToken);
 
-        var customerReceived = issuedInPeriod.Sum(p => p.CustomerChargedRial);
-        var companyRemittance = issuedInPeriod.Sum(p => p.PremiumRial);
+        var customerReceived = billedInPeriod.Sum(p => p.CustomerChargedRial);
+        var companyRemittance = billedInPeriod.Sum(p => p.PremiumRial);
         var storeProfit = StoreMarkup.Profit(customerReceived, companyRemittance);
-        var mobilePrice = issuedInPeriod.Sum(p => p.MobilePriceRial);
+        var mobilePrice = billedInPeriod.Sum(p => p.MobilePriceRial);
 
-        var daily = issuedInPeriod
-            .GroupBy(p => IranDateTime.ToJalaliDate(p.IssueDate!.Value))
-            .Select(g => new StoreDailyPoint(g.Key, g.Count(), g.Sum(x => x.CustomerChargedRial)))
+        var daily = billedInPeriod
+            .GroupBy(p => IranDateTime.ToJalaliDate(p.IssueDate ?? p.CreatedAt))
+            .Select(g => new StoreDailyPoint(g.Key, g.Count(), g.Sum(x => x.PremiumRial)))
             .OrderBy(x => x.Date)
             .ToList();
 
-        var brands = issuedInPeriod
+        var brands = billedInPeriod
             .GroupBy(p => p.Brand.Name)
-            .Select(g => new StoreBrandPoint(g.Key, g.Count(), g.Sum(x => x.CustomerChargedRial)))
+            .Select(g => new StoreBrandPoint(g.Key, g.Count(), g.Sum(x => x.PremiumRial)))
             .OrderByDescending(x => x.Count)
             .Take(8)
             .ToList();
@@ -93,17 +93,16 @@ public class StorePerformanceService
         return new StorePerformanceReportDto(
             from,
             to,
-            issuedInPeriod.Count,
-            issuedInPeriod.Count(p => p.RenewedFromPolicyId != null),
-            issuedInPeriod.Count(p => p.InsuranceType == InsuranceType.New),
-            issuedInPeriod.Count(p => p.InsuranceType == InsuranceType.Used),
+            billedInPeriod.Count,
+            billedInPeriod.Count(p => p.RenewedFromPolicyId != null),
+            billedInPeriod.Count(p => p.InsuranceType == InsuranceType.New),
+            billedInPeriod.Count(p => p.InsuranceType == InsuranceType.Used),
             policies.Count(p => p.Status == PolicyStatus.AwaitingPayment),
             policies.Count(p => p.Status == PolicyStatus.Cancelled),
             policies.Count,
             customerReceived,
             companyRemittance,
             mobilePrice,
-            issuedInPeriod.Count == 0 ? 0 : Math.Round(companyRemittance / issuedInPeriod.Count, 0, MidpointRounding.AwayFromZero),
             storeProfit,
             daily,
             brands);

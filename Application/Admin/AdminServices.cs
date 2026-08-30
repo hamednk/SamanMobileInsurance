@@ -10,11 +10,13 @@ public class AdminCatalogService
 {
     private readonly IApplicationDbContext _db;
     private readonly IAuditLogger _audit;
+    private readonly ICurrentUser _current;
 
-    public AdminCatalogService(IApplicationDbContext db, IAuditLogger audit)
+    public AdminCatalogService(IApplicationDbContext db, IAuditLogger audit, ICurrentUser current)
     {
         _db = db;
         _audit = audit;
+        _current = current;
     }
 
     public async Task<IReadOnlyList<NamedItemDto>> BrandsAsync(CancellationToken cancellationToken) =>
@@ -70,9 +72,10 @@ public class AdminCatalogService
     {
         var query = _db.MobileModels.AsNoTracking().Where(m => !m.IsDeleted);
         if (brandId is not null) query = query.Where(m => m.BrandId == brandId);
-        return await query.OrderBy(m => m.Name)
-            .Select(m => new ModelItemDto(m.Id, m.BrandId, m.Brand.Name, m.Name, m.IsActive))
+        var items = await query.OrderBy(m => m.Name)
+            .Select(m => new { m.Id, m.BrandId, BrandName = m.Brand.Name, m.Name, m.IsActive, m.CreatedByUserId })
             .ToListAsync(cancellationToken);
+        return items.Select(m => new ModelItemDto(m.Id, m.BrandId, m.BrandName, m.Name, m.IsActive, CanManage(m.CreatedByUserId))).ToList();
     }
 
     public async Task<ModelItemDto> CreateModelAsync(CreateModelRequest request, CancellationToken cancellationToken)
@@ -99,6 +102,7 @@ public class AdminCatalogService
             BrandId = request.BrandId,
             Name = name,
             IsActive = request.IsActive,
+            CreatedByUserId = _current.IsStore ? _current.UserId : null,
             CreatedAt = DateTimeOffset.UtcNow
         };
         _db.MobileModels.Add(entity);
@@ -108,13 +112,14 @@ public class AdminCatalogService
             .Where(b => b.Id == entity.BrandId)
             .Select(b => b.Name)
             .FirstAsync(cancellationToken);
-        return new ModelItemDto(entity.Id, entity.BrandId, brandName, entity.Name, entity.IsActive);
+        return MapModel(entity, brandName);
     }
 
     public async Task<ModelItemDto> UpdateModelAsync(Guid id, CreateNamedItemRequest request, CancellationToken cancellationToken)
     {
         var entity = await _db.MobileModels.FirstOrDefaultAsync(m => m.Id == id && !m.IsDeleted, cancellationToken)
             ?? throw new NotFoundException("مدل یافت نشد.");
+        EnsureStoreOwnsModel(entity);
         var name = request.Name.Trim();
         if (await _db.MobileModels.AnyAsync(
                 m => !m.IsDeleted && m.BrandId == entity.BrandId && m.Id != id && m.Name.ToLower() == name.ToLower(),
@@ -131,19 +136,34 @@ public class AdminCatalogService
             .Where(b => b.Id == entity.BrandId)
             .Select(b => b.Name)
             .FirstAsync(cancellationToken);
-        return new ModelItemDto(entity.Id, entity.BrandId, brandName, entity.Name, entity.IsActive);
+        return MapModel(entity, brandName);
     }
 
     public async Task DeleteModelAsync(Guid id, CancellationToken cancellationToken)
     {
         var entity = await _db.MobileModels.FirstOrDefaultAsync(m => m.Id == id && !m.IsDeleted, cancellationToken)
             ?? throw new NotFoundException("مدل یافت نشد.");
+        EnsureStoreOwnsModel(entity);
         entity.IsDeleted = true;
         entity.DeletedAt = DateTimeOffset.UtcNow;
         entity.IsActive = false;
         await _db.SaveChangesAsync(cancellationToken);
         await _audit.LogAsync("model-delete", nameof(MobileModel), id.ToString(), cancellationToken);
     }
+
+    private bool CanManage(Guid? createdByUserId) =>
+        !_current.IsStore || (createdByUserId is Guid owner && owner == _current.UserId);
+
+    private void EnsureStoreOwnsModel(MobileModel entity)
+    {
+        if (!CanManage(entity.CreatedByUserId))
+        {
+            throw new ForbiddenAppException("فقط مدل‌هایی که خودتان ثبت کرده‌اید قابل ویرایش یا حذف هستند.");
+        }
+    }
+
+    private static ModelItemDto MapModel(MobileModel entity, string brandName) =>
+        new(entity.Id, entity.BrandId, brandName, entity.Name, entity.IsActive, true);
 
     public async Task<IReadOnlyList<LookupItemNamed>> ProvincesAsync(CancellationToken cancellationToken) =>
         await _db.Provinces.AsNoTracking().OrderBy(p => p.Name)
@@ -364,16 +384,38 @@ public class AdminQueryService
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = _db.AuditLogs.AsNoTracking().AsQueryable();
+        var query = _db.AuditLogs.AsNoTracking()
+            .Include(a => a.User).ThenInclude(u => u!.Store)
+            .AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
             var t = search.Trim();
-            query = query.Where(a => a.Action.Contains(t) || a.EntityName.Contains(t));
+            query = query.Where(a =>
+                a.Action.Contains(t) ||
+                a.EntityName.Contains(t) ||
+                (a.User != null && a.User.Username.Contains(t)) ||
+                (a.User != null && a.User.Store != null &&
+                    (a.User.Store.StoreName.Contains(t) ||
+                     a.User.Store.ManagerFirstName.Contains(t) ||
+                     a.User.Store.ManagerLastName.Contains(t))));
         }
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(a => a.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(a => new AuditLogItem(a.Id, a.UserId, a.Action, a.EntityName, a.EntityId, a.IpAddress, a.CreatedAt))
+            .Select(a => new AuditLogItem(
+                a.Id,
+                a.UserId,
+                a.User != null ? a.User.Username : null,
+                a.User != null ? a.User.Role : (UserRole?)null,
+                a.User != null && a.User.Store != null
+                    ? (a.User.Store.ManagerFirstName + " " + a.User.Store.ManagerLastName).Trim()
+                    : a.User != null ? a.User.Username : null,
+                a.User != null && a.User.Store != null ? a.User.Store.StoreName : null,
+                a.Action,
+                a.EntityName,
+                a.EntityId,
+                a.IpAddress,
+                a.CreatedAt))
             .ToListAsync(cancellationToken);
         return Page(items, page, pageSize, total);
     }
@@ -387,4 +429,15 @@ public class AdminQueryService
 
 public record CustomerListItem(Guid Id, string FirstName, string LastName, string NationalCode, string Mobile, DateTimeOffset CreatedAt);
 public record PaymentListItem(Guid Id, Guid PolicyId, string? PolicyNumber, decimal AmountRial, PaymentStatus Status, string? TrackingCode, DateTimeOffset? PaidAt, DateTimeOffset CreatedAt);
-public record AuditLogItem(Guid Id, Guid? UserId, string Action, string EntityName, string? EntityId, string? IpAddress, DateTimeOffset CreatedAt);
+public record AuditLogItem(
+    Guid Id,
+    Guid? UserId,
+    string? Username,
+    UserRole? Role,
+    string? ActorName,
+    string? StoreName,
+    string Action,
+    string EntityName,
+    string? EntityId,
+    string? IpAddress,
+    DateTimeOffset CreatedAt);

@@ -13,6 +13,7 @@ public record AdminDashboardDto(
     int TodayPolicies,
     int MonthPolicies,
     decimal TotalPremiumRial,
+    decimal TotalStoreProfitRial,
     int NewPhones,
     int UsedPhones,
     int SuccessfulPayments,
@@ -79,7 +80,7 @@ public record UpdateStoreRequest(
     bool IsActive);
 
 public record NamedItemDto(Guid Id, string Name, bool IsActive);
-public record ModelItemDto(Guid Id, Guid BrandId, string BrandName, string Name, bool IsActive);
+public record ModelItemDto(Guid Id, Guid BrandId, string BrandName, string Name, bool IsActive, bool CanManage = true);
 public record CreateNamedItemRequest(string Name, bool IsActive = true);
 public record CreateModelRequest(Guid BrandId, string Name, bool IsActive = true);
 
@@ -113,10 +114,12 @@ public class AdminDashboardService
         var policies = _db.InsurancePolicies.AsNoTracking();
         var today = await policies.CountAsync(p => p.CreatedAt >= startToday, cancellationToken);
         var month = await policies.CountAsync(p => p.CreatedAt >= startMonth, cancellationToken);
-        var premium = await policies.Where(p => p.Status == PolicyStatus.Issued)
-            .SumAsync(p => (decimal?)p.PremiumRial, cancellationToken) ?? 0;
-        var newPhones = await policies.CountAsync(p => p.InsuranceType == InsuranceType.New && p.Status == PolicyStatus.Issued, cancellationToken);
-        var usedPhones = await policies.CountAsync(p => p.InsuranceType == InsuranceType.Used && p.Status == PolicyStatus.Issued, cancellationToken);
+        var billed = policies.Where(p => p.Status == PolicyStatus.Issued || p.Status == PolicyStatus.Paid);
+        var premium = await billed.SumAsync(p => (decimal?)p.PremiumRial, cancellationToken) ?? 0;
+        var charged = await billed.SumAsync(p => (decimal?)p.CustomerChargedRial, cancellationToken) ?? 0;
+        var storeProfit = charged - premium;
+        var newPhones = await billed.CountAsync(p => p.InsuranceType == InsuranceType.New, cancellationToken);
+        var usedPhones = await billed.CountAsync(p => p.InsuranceType == InsuranceType.Used, cancellationToken);
 
         var payments = _db.Payments.AsNoTracking();
         var ok = await payments.CountAsync(p => p.Status == PaymentStatus.Paid, cancellationToken);
@@ -165,7 +168,7 @@ public class AdminDashboardService
             .ToList();
 
         return new AdminDashboardDto(
-            totalStores, activeStores, today, month, premium, newPhones, usedPhones, ok, fail,
+            totalStores, activeStores, today, month, premium, storeProfit, newPhones, usedPhones, ok, fail,
             daily, monthly, province, top);
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+
 using SamanMobileInsurance.Application.Abstractions;
 using SamanMobileInsurance.Application.Common;
 using SamanMobileInsurance.Application.Insurance;
@@ -18,7 +19,6 @@ public class PaymentService
     private readonly IApplicationDbContext _db;
     private readonly IPaymentGateway _gateway;
     private readonly ICurrentUser _current;
-    private readonly PolicyIssuanceService _issuance;
     private readonly IAuditLogger _audit;
     private readonly string _callbackBaseUrl;
     private readonly string _frontendBaseUrl;
@@ -27,14 +27,12 @@ public class PaymentService
         IApplicationDbContext db,
         IPaymentGateway gateway,
         ICurrentUser current,
-        PolicyIssuanceService issuance,
         IAuditLogger audit,
         PaymentOptions options)
     {
         _db = db;
         _gateway = gateway;
         _current = current;
-        _issuance = issuance;
         _audit = audit;
         _callbackBaseUrl = options.CallbackBaseUrl.TrimEnd('/');
         _frontendBaseUrl = options.FrontendBaseUrl.TrimEnd('/');
@@ -137,7 +135,7 @@ public class PaymentService
 
         try
         {
-            await VerifyAndIssueAsync(payment, cancellationToken);
+            await VerifyPaymentAsync(payment, cancellationToken);
             return new PaymentCallbackResult(true, payment.PolicyId, successPath);
         }
         catch
@@ -151,12 +149,12 @@ public class PaymentService
         var payment = await _db.Payments.Include(p => p.Policy)
             .FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken)
             ?? throw new NotFoundException("پرداخت یافت نشد.");
-        await VerifyAndIssueAsync(payment, cancellationToken);
+        await VerifyPaymentAsync(payment, cancellationToken);
     }
 
-    private async Task VerifyAndIssueAsync(Payment payment, CancellationToken cancellationToken)
+    private async Task VerifyPaymentAsync(Payment payment, CancellationToken cancellationToken)
     {
-        if (payment.Status == PaymentStatus.Paid && payment.Policy.Status == PolicyStatus.Issued)
+        if (payment.Status == PaymentStatus.Paid && payment.Policy.Status is PolicyStatus.Paid or PolicyStatus.Issued)
         {
             return;
         }
@@ -185,7 +183,7 @@ public class PaymentService
                         .FirstOrDefaultAsync(p => p.Id == payment.PolicyId, ct)
                         ?? throw new NotFoundException("بیمه‌نامه یافت نشد.");
 
-                    if (policy.Status == PolicyStatus.Issued)
+                    if (policy.Status is PolicyStatus.Paid or PolicyStatus.Issued)
                     {
                         return;
                     }
@@ -202,7 +200,6 @@ public class PaymentService
                     payment.TransactionId = verify.TransactionId;
                     payment.UpdatedAt = DateTimeOffset.UtcNow;
 
-                    await _issuance.IssueAsync(policy, ct);
                     await _db.SaveChangesAsync(ct);
                     return;
                 }

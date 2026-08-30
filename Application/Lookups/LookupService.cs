@@ -50,7 +50,8 @@ public class LookupService
 public record StoreDashboardDto(
     int TodayPolicies,
     int MonthPolicies,
-    decimal TotalSalesRial,
+    decimal TotalPremiumRial,
+    decimal StoreProfitRial,
     int AwaitingPayment,
     int Issued);
 
@@ -75,12 +76,13 @@ public class StoreDashboardService
         var query = _db.InsurancePolicies.AsNoTracking().Where(p => p.StoreId == storeId);
         var today = await query.CountAsync(p => p.CreatedAt >= startToday, cancellationToken);
         var month = await query.CountAsync(p => p.CreatedAt >= startMonth, cancellationToken);
-        var sales = await query
-            .Where(p => p.Status == PolicyStatus.Issued)
-            .SumAsync(p => (decimal?)p.CustomerChargedRial, cancellationToken) ?? 0;
+        var billed = query.Where(p => p.Status == PolicyStatus.Issued || p.Status == PolicyStatus.Paid);
+        var premium = await billed.SumAsync(p => (decimal?)p.PremiumRial, cancellationToken) ?? 0;
+        var charged = await billed.SumAsync(p => (decimal?)p.CustomerChargedRial, cancellationToken) ?? 0;
+        var profit = charged - premium;
         var awaiting = await query.CountAsync(p => p.Status == PolicyStatus.AwaitingPayment, cancellationToken);
-        var issued = await query.CountAsync(p => p.Status == PolicyStatus.Issued, cancellationToken);
+        var issued = await query.CountAsync(p => p.Status == PolicyStatus.Issued || p.Status == PolicyStatus.Paid, cancellationToken);
 
-        return new StoreDashboardDto(today, month, sales, awaiting, issued);
+        return new StoreDashboardDto(today, month, premium, profit, awaiting, issued);
     }
 }

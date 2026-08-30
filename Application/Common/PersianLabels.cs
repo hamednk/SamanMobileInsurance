@@ -9,7 +9,7 @@ public static class PersianLabels
         PolicyStatus.Draft => "پیش‌نویس",
         PolicyStatus.AwaitingImages => "در انتظار تصویر",
         PolicyStatus.AwaitingPayment => "در انتظار پرداخت",
-        PolicyStatus.Paid => "پرداخت‌شده",
+        PolicyStatus.Paid => "ثبت‌شده",
         PolicyStatus.Issued => "صادر شده",
         PolicyStatus.Cancelled => "لغو شده",
         PolicyStatus.Expired => "منقضی‌شده",
