@@ -1,16 +1,13 @@
-using System.Security.Claims;
 using SamanMobileInsurance.Application.Abstractions;
 using SamanMobileInsurance.Domain.Enums;
 
+using System.Security.Claims;
+
 namespace SamanMobileInsurance.Api.Auth;
 
-public class CurrentUser : ICurrentUser
+public class CurrentUser(IHttpContextAccessor http) : ICurrentUser
 {
-    private readonly IHttpContextAccessor _http;
-
-    public CurrentUser(IHttpContextAccessor http) => _http = http;
-
-    private ClaimsPrincipal? Principal => _http.HttpContext?.User;
+    private ClaimsPrincipal? Principal => http.HttpContext?.User;
 
     public Guid? UserId =>
         Guid.TryParse(Principal?.FindFirstValue(ClaimTypes.NameIdentifier) ?? Principal?.FindFirstValue("sub"), out var id)
