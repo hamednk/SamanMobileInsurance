@@ -35,6 +35,7 @@ public record StoreFilter(
     Guid? CityId,
     DateOnly? From,
     DateOnly? To,
+    bool? IsActive,
     string? SortBy,
     string? SortDirection);
 
@@ -203,6 +204,7 @@ public class AdminStoreService
             var to = filter.To.Value.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
             query = query.Where(s => s.CreatedAt <= to);
         }
+        if (filter.IsActive is not null) query = query.Where(s => s.IsActive == filter.IsActive);
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var t = filter.Search.Trim();

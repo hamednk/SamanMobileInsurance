@@ -34,11 +34,12 @@ public class AdminController : ApiControllerBase
         [FromQuery] Guid? cityId = null,
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to = null,
+        [FromQuery] bool? isActive = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDirection = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await stores.ListAsync(new StoreFilter(page, pageSize, search, provinceId, cityId, from, to, sortBy, sortDirection), cancellationToken);
+        var result = await stores.ListAsync(new StoreFilter(page, pageSize, search, provinceId, cityId, from, to, isActive, sortBy, sortDirection), cancellationToken);
         return Success(result.Items, pagination: result.Pagination);
     }
 
@@ -328,12 +329,35 @@ public class AdminController : ApiControllerBase
         [FromQuery] Guid? cityId,
         [FromQuery] Guid? storeId,
         [FromQuery] InsuranceType? insuranceType,
+        [FromQuery] PolicyStatus? status,
+        [FromQuery] PaymentStatus? paymentStatus,
+        [FromQuery] string? search,
         CancellationToken cancellationToken = default)
     {
         var bytes = await excel.ExportInsuranceAsync(new InsuranceReportFilter(
-            fromDate, toDate, provinceId, cityId, storeId, insuranceType, null, null, null, 1, 20, null, null),
+            fromDate, toDate, provinceId, cityId, storeId, insuranceType, status, paymentStatus, search, 1, 20, null, null),
             cancellationToken);
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "insurance-report.xlsx");
+    }
+
+    [HttpGet("policies/export")]
+    public async Task<IActionResult> ExportPolicies(
+        [FromServices] IExcelReportService excel,
+        [FromQuery] DateOnly? fromDate,
+        [FromQuery] DateOnly? toDate,
+        [FromQuery] Guid? provinceId,
+        [FromQuery] Guid? cityId,
+        [FromQuery] Guid? storeId,
+        [FromQuery] InsuranceType? insuranceType,
+        [FromQuery] PolicyStatus? status,
+        [FromQuery] PaymentStatus? paymentStatus,
+        [FromQuery] string? search,
+        CancellationToken cancellationToken = default)
+    {
+        var bytes = await excel.ExportInsuranceAsync(new InsuranceReportFilter(
+            fromDate, toDate, provinceId, cityId, storeId, insuranceType, status, paymentStatus, search, 1, 20, null, null),
+            cancellationToken);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "store-policies.xlsx");
     }
 
     [HttpGet("festivals")]
