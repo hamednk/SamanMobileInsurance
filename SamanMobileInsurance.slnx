@@ -11,6 +11,4 @@
   <Folder Name="/Infrastructure/">
     <Project Path="Infrastructure/SamanMobileInsurance.Infrastructure.csproj" />
   </Folder>
-  <Project Path="../../tests/backend/SamanMobileInsurance.IntegrationTests/SamanMobileInsurance.IntegrationTests.csproj" />
-  <Project Path="../../tests/backend/SamanMobileInsurance.UnitTests/SamanMobileInsurance.UnitTests.csproj" />
 </Solution>
