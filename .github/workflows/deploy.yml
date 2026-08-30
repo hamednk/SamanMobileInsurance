@@ -5,64 +5,57 @@ on:
     branches:
       - master
 
+  workflow_dispatch:
+
 jobs:
   deploy:
+    name: Build and Deploy Backend
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          script_stop: true
-          script: |
-            set -e
+          dotnet-version: '8.0.x'
 
-            echo "===== BACKEND DEPLOY START ====="
+      - name: Restore
+        run: dotnet restore
 
-            cd /var/www/backend/SamanMobileInsurance
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
 
-            echo "===== GIT STATUS ====="
-            git status
+      - name: Publish
+        run: dotnet publish --configuration Release --no-build --output ./publish
 
-            echo "===== UPDATE SOURCE ====="
-            git fetch origin master
-            git reset --hard origin/master
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-            echo "===== DOTNET PUBLISH ====="
-            rm -rf /var/www/backend/publish_new
+      - name: Upload Backend
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.SERVER_PORT }}" \
+            ./publish/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/var/www/backend/publish/
 
-            dotnet restore
+      - name: Restart Backend
+        run: |
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "sudo systemctl restart saman-insurance-api"
 
-            dotnet publish \
-              ./Api/SamanMobileInsurance.Api.csproj \
-              -c Release \
-              -o /var/www/backend/publish_new \
-              --no-restore
-
-            echo "===== STOP API ====="
-            sudo systemctl stop saman-insurance-api
-
-            echo "===== BACKUP CURRENT PUBLISH ====="
-            rm -rf /var/www/backend/publish_backup
-            mv /var/www/backend/publish /var/www/backend/publish_backup
-
-            echo "===== INSTALL NEW PUBLISH ====="
-            mv /var/www/backend/publish_new /var/www/backend/publish
-
-            echo "===== START API ====="
-            sudo systemctl start saman-insurance-api
-
-            echo "===== CHECK API ====="
-            sleep 3
-
-            sudo systemctl is-active --quiet saman-insurance-api
-
-            curl --fail --silent \
-              http://127.0.0.1:5000/api/v1/auth/captcha \
-              > /dev/null
-
-            echo "===== BACKEND DEPLOY SUCCESS ====="
+      - name: Backend Health Check
+        run: |
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "sudo systemctl is-active --quiet saman-insurance-api"
