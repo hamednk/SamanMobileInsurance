@@ -24,6 +24,16 @@ public record CreatePolicyRequest(
     DateTimeOffset? StartDate,
     decimal? CustomerChargedRial = null);
 
+public record UpdatePolicyDraftRequest(
+    CustomerInput Customer,
+    Guid BrandId,
+    Guid ModelId,
+    decimal MobilePriceRial,
+    string Imei1,
+    string? Imei2,
+    DateTimeOffset? StartDate,
+    decimal? CustomerChargedRial = null);
+
 public record SetCustomerChargedRequest(decimal CustomerChargedRial);
 
 public record PremiumRequest(InsuranceType InsuranceType, decimal MobilePriceRial);
@@ -110,14 +120,43 @@ public class CustomerInputValidator : AbstractValidator<CustomerInput>
 {
     public CustomerInputValidator()
     {
-        RuleFor(x => x.FirstName).NotEmpty().WithMessage("نام الزامی است.").MaximumLength(80);
-        RuleFor(x => x.LastName).NotEmpty().WithMessage("نام خانوادگی الزامی است.").MaximumLength(80);
+        RuleFor(x => x.FirstName)
+            .NotEmpty().WithMessage("نام الزامی است.")
+            .MaximumLength(80)
+            .Must(IranianPersonName.IsValid).WithMessage("نام فقط می‌تواند شامل حروف فارسی باشد.");
+        RuleFor(x => x.LastName)
+            .NotEmpty().WithMessage("نام خانوادگی الزامی است.")
+            .MaximumLength(80)
+            .Must(IranianPersonName.IsValid).WithMessage("نام خانوادگی فقط می‌تواند شامل حروف فارسی باشد.");
         RuleFor(x => x.NationalCode)
             .Must(IranianNationalCode.IsValid).WithMessage("کد ملی معتبر نیست.");
         RuleFor(x => x.BirthDate).LessThan(DateOnly.FromDateTime(DateTime.UtcNow.Date));
         RuleFor(x => x.Mobile).Must(IranianMobile.IsValid).WithMessage("شماره موبایل معتبر نیست.");
         RuleFor(x => x.Address).NotEmpty().WithMessage("آدرس الزامی است.").MaximumLength(500);
         RuleFor(x => x.PostalCode).Must(IranianPostalCode.IsValid).WithMessage("کد پستی باید ۱۰ رقم باشد.");
+    }
+}
+
+public class UpdatePolicyDraftRequestValidator : AbstractValidator<UpdatePolicyDraftRequest>
+{
+    public UpdatePolicyDraftRequestValidator()
+    {
+        RuleFor(x => x.Customer).SetValidator(new CustomerInputValidator());
+        RuleFor(x => x.BrandId).NotEmpty();
+        RuleFor(x => x.ModelId).NotEmpty();
+        RuleFor(x => x.MobilePriceRial).GreaterThan(0).WithMessage("قیمت موبایل باید بزرگ‌تر از صفر باشد.");
+        RuleFor(x => x.CustomerChargedRial)
+            .GreaterThan(0)
+            .When(x => x.CustomerChargedRial is not null)
+            .WithMessage("مبلغ دریافتی از مشتری باید بزرگ‌تر از صفر باشد.");
+        RuleFor(x => x.Imei1)
+            .Must(ImeiValidator.IsValid).WithMessage("IMEI 1 معتبر نیست.");
+        RuleFor(x => x.Imei2)
+            .Must(v => string.IsNullOrWhiteSpace(v) || ImeiValidator.IsValid(v))
+            .WithMessage("IMEI 2 معتبر نیست.");
+        RuleFor(x => x)
+            .Must(x => string.IsNullOrWhiteSpace(x.Imei2) || x.Imei1 != x.Imei2)
+            .WithMessage("IMEI 1 و IMEI 2 نباید یکسان باشند.");
     }
 }
 

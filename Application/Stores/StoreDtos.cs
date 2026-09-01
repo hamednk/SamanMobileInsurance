@@ -44,8 +44,14 @@ public class RegisterStoreRequestValidator : AbstractValidator<RegisterStoreRequ
     public RegisterStoreRequestValidator()
     {
         RuleFor(x => x.StoreName).NotEmpty().WithMessage("نام فروشگاه الزامی است.").MaximumLength(200);
-        RuleFor(x => x.ManagerFirstName).NotEmpty().WithMessage("نام مدیر الزامی است.").MaximumLength(80);
-        RuleFor(x => x.ManagerLastName).NotEmpty().WithMessage("نام خانوادگی مدیر الزامی است.").MaximumLength(80);
+        RuleFor(x => x.ManagerFirstName)
+            .NotEmpty().WithMessage("نام مدیر الزامی است.")
+            .MaximumLength(80)
+            .Must(IranianPersonName.IsValid).WithMessage("نام مدیر فقط می‌تواند شامل حروف فارسی باشد.");
+        RuleFor(x => x.ManagerLastName)
+            .NotEmpty().WithMessage("نام خانوادگی مدیر الزامی است.")
+            .MaximumLength(80)
+            .Must(IranianPersonName.IsValid).WithMessage("نام خانوادگی مدیر فقط می‌تواند شامل حروف فارسی باشد.");
         RuleFor(x => x.NationalCode)
             .NotEmpty().WithMessage("کد ملی الزامی است.")
             .Must(IranianNationalCode.IsValid).WithMessage("کد ملی معتبر نیست.");

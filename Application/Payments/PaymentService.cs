@@ -51,7 +51,13 @@ public class PaymentService
             throw new ForbiddenAppException();
         }
 
-        if (policy.Status is PolicyStatus.Issued or PolicyStatus.Paid)
+        var completedPayment = await _db.Payments
+            .AsNoTracking()
+            .AnyAsync(p => p.PolicyId == policy.Id && p.Status == PaymentStatus.Paid, cancellationToken);
+
+        if (policy.Status == PolicyStatus.Issued ||
+            policy.Status == PolicyStatus.Paid ||
+            completedPayment)
         {
             throw new BusinessRuleException("این بیمه‌نامه قبلاً پرداخت شده است.");
         }

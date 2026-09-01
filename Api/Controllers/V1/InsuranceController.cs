@@ -88,6 +88,17 @@ public class InsuranceController : ApiControllerBase
         return Success(await _insurance.CreateDraftAsync(request, cancellationToken), "پیش‌نویس بیمه‌نامه ذخیره شد.");
     }
 
+    [HttpPut("{id:guid}/draft")]
+    public async Task<ActionResult<ApiResponse<PolicyDto>>> UpdateDraft(
+        Guid id,
+        [FromBody] UpdatePolicyDraftRequest request,
+        [FromServices] IValidator<UpdatePolicyDraftRequest> validator,
+        CancellationToken cancellationToken)
+    {
+        await validator.EnsureValidAsync(request, cancellationToken);
+        return Success(await _insurance.UpdateDraftAsync(id, request, cancellationToken), "اطلاعات بیمه‌نامه به‌روزرسانی شد.");
+    }
+
     [HttpPost("premium")]
     public async Task<ActionResult<ApiResponse<PremiumQuote>>> Premium(
         [FromBody] PremiumRequest request,
@@ -102,6 +113,7 @@ public class InsuranceController : ApiControllerBase
     public async Task<ActionResult<ApiResponse<ImeiAvailabilityDto>>> CheckImeiAvailability(
         [FromQuery] string imei1,
         [FromQuery] string? imei2,
+        [FromQuery] Guid? excludePolicyId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(imei1))
@@ -115,7 +127,7 @@ public class InsuranceController : ApiControllerBase
             return Success(new ImeiAvailabilityDto(false, "سریال ۱ و سریال ۲ نباید یکسان باشند."));
         }
 
-        var available = await _insurance.IsImeiAvailableAsync(imei1.Trim(), normalizedImei2, null, cancellationToken);
+        var available = await _insurance.IsImeiAvailableAsync(imei1.Trim(), normalizedImei2, excludePolicyId, cancellationToken);
         return Success(available
             ? new ImeiAvailabilityDto(true)
             : new ImeiAvailabilityDto(false, "این IMEI دارای بیمه‌نامه فعال است و امکان ثبت بیمه جدید وجود ندارد."));

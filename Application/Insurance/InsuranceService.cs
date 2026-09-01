@@ -68,6 +68,41 @@ public class InsuranceService
         return await GetAsync(policy.Id, cancellationToken);
     }
 
+    public async Task<PolicyDto> UpdateDraftAsync(Guid id, UpdatePolicyDraftRequest request, CancellationToken cancellationToken)
+    {
+        var policy = await LoadOwnedAsync(id, cancellationToken);
+
+        if (policy.Status is not (PolicyStatus.Draft or PolicyStatus.AwaitingImages or PolicyStatus.AwaitingPayment))
+        {
+            throw new ValidationAppException("پس از پرداخت امکان ویرایش اطلاعات بیمه‌نامه وجود ندارد.");
+        }
+
+        await EnsureBrandModelAsync(request.BrandId, request.ModelId, cancellationToken);
+        await EnsureImeiAvailableAsync(request.Imei1, request.Imei2, policy.Id, cancellationToken);
+
+        var quote = await _premium.QuoteAsync(policy.InsuranceType, request.MobilePriceRial, cancellationToken);
+        var startDate = policy.InsuranceType == InsuranceType.New
+            ? ResolveStartDate(InsuranceType.New, request.StartDate)
+            : policy.StartDate;
+
+        var customer = await UpsertCustomerAsync(request.Customer, cancellationToken);
+
+        policy.CustomerId = customer.Id;
+        policy.BrandId = request.BrandId;
+        policy.ModelId = request.ModelId;
+        policy.MobilePriceRial = quote.MobilePriceRial;
+        policy.PremiumRial = quote.PremiumRial;
+        policy.CustomerChargedRial = StoreMarkup.ResolveCustomerCharged(quote.PremiumRial, request.CustomerChargedRial);
+        policy.Imei1 = request.Imei1;
+        policy.Imei2 = string.IsNullOrWhiteSpace(request.Imei2) ? null : request.Imei2;
+        policy.StartDate = startDate;
+        policy.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await _audit.LogAsync("policy-update", nameof(InsurancePolicy), policy.Id.ToString(), cancellationToken);
+        return await GetAsync(policy.Id, cancellationToken);
+    }
+
     public async Task<PolicyDto> GetAsync(Guid id, CancellationToken cancellationToken)
     {
         var query = QueryPolicies();
